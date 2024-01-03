@@ -1,0 +1,81 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: amqp
+spec:
+  template:
+    serviceAccountName: sensor-fission-workflow-sa
+  dependencies:
+    - name: dep
+      eventSourceName: amqp
+      eventName: fission-workflow
+  triggers:
+    - template:
+        name: amqp-workflow-trigger
+        k8s:
+          operation: create
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                namespace: default
+                generateName: fission-python-function-
+              spec:
+                serviceAccountName: workflow
+                entrypoint: run-fission-python-function
+                arguments:
+                  parameters:
+                    - name: function-name
+                    - name: git-url
+                    - name: env-name
+                templates:
+                  - name: run-fission-python-function
+                    inputs:
+                      parameters:
+                        - name: function-name
+                        - name: git-url
+                        - name: env-name
+                      artifacts:
+                      - name: python-code
+                        path: /src
+                        git:
+                          repo: "{{inputs.parameters.git-url}}"
+                          revision: "main"
+                      - name: fission-cli
+                        path: /usr/local/bin/fission
+                        mode: 0755
+                        http:
+                          url: https://github.com/fission/fission/releases/download/v1.20.0/fission-v1.20.0-linux-amd64
+                      - name: kubectl
+                        path: /bin/kubectl
+                        mode: 0755
+                        http:
+                          url: https://storage.googleapis.com/kubernetes-release/release/v1.8.0/bin/linux/amd64/kubectl
+                    container:
+                      image: debian
+                      command: [sh, -c]
+                      args: ["fission function create --name {{inputs.parameters.function-name}} --env {{inputs.parameters.env-name}} --code /src/fission-sample-function/hello.py --namespace=default"]
+                      env:
+                      - name: KUBECONFIG  # name of env var
+                        value: "/tmp/kubeconfig"
+                      volumeMounts:
+                      - name: kubeconfig-file
+                        mountPath: /tmp
+                volumes:
+                - name: kubeconfig-file
+                  secret:
+                    secretName: workflow-kubeconfig
+          parameters:
+            - src:
+                dependencyName: dep
+                dataKey: body.function-name
+              dest: spec.arguments.parameters.0.value
+            - src:
+                dependencyName: dep
+                dataKey: body.git-url
+              dest: spec.arguments.parameters.1.value
+            - src:
+                dependencyName: dep
+                dataKey: body.env-name
+              dest: spec.arguments.parameters.2.value   

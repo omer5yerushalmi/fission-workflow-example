@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fission-python-function-
+spec:
+  entrypoint: run-fission-python-function
+  templates:
+    - name: run-fission-python-function
+      inputs:
+        artifacts:
+        - name: python-code
+          path: /src
+          git:
+            repo: https://github.com/omer5yerushalmi/fission-workflow-example.git
+            revision: "main"
+        - name: fission-cli
+          path: /usr/local/bin/fission
+          mode: 0755
+          http:
+            url: https://github.com/fission/fission/releases/download/v1.20.0/fission-v1.20.0-linux-amd64
+        - name: kubectl
+          path: /bin/kubectl
+          mode: 0755
+          http:
+            url: https://storage.googleapis.com/kubernetes-release/release/v1.8.0/bin/linux/amd64/kubectl
+      container:
+        image: debian
+        command: [sh, -c]
+        args: ["fission function create --name my-python-function-workflow --env python --code /src/fission-sample-function/hello.py --namespace=default"]
+        env:
+        - name: KUBECONFIG  # name of env var
+          value: "/tmp/kubeconfig"
+        volumeMounts:
+        - name: kubeconfig-file
+          mountPath: /tmp
+  volumes:
+  - name: kubeconfig-file
+    secret:
+      secretName: workflow-kubeconfig
